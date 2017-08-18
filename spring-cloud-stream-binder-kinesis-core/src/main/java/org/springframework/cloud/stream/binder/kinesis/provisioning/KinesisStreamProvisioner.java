@@ -16,9 +16,17 @@
 
 package org.springframework.cloud.stream.binder.kinesis.provisioning;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.amazonaws.services.kinesis.AmazonKinesis;
+import com.amazonaws.services.kinesis.model.DescribeStreamRequest;
 import com.amazonaws.services.kinesis.model.DescribeStreamResult;
+import com.amazonaws.services.kinesis.model.LimitExceededException;
 import com.amazonaws.services.kinesis.model.ResourceNotFoundException;
+import com.amazonaws.services.kinesis.model.Shard;
+import com.amazonaws.services.kinesis.model.StreamDescription;
+import com.amazonaws.services.kinesis.model.StreamStatus;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -64,8 +72,8 @@ public class KinesisStreamProvisioner
 	public ProducerDestination provisionProducerDestination(String name,
 			ExtendedProducerProperties<KinesisProducerProperties> properties) throws ProvisioningException {
 
-		if (logger.isInfoEnabled()) {
-			logger.info("Using Kinesis stream for outbound: " + name);
+		if (this.logger.isInfoEnabled()) {
+			this.logger.info("Using Kinesis stream for outbound: " + name);
 		}
 
 		return new KinesisProducerDestination(name, createOrUpdate(name, properties.getPartitionCount()));
@@ -75,8 +83,8 @@ public class KinesisStreamProvisioner
 	public ConsumerDestination provisionConsumerDestination(String name, String group,
 			ExtendedConsumerProperties<KinesisConsumerProperties> properties) throws ProvisioningException {
 
-		if (logger.isInfoEnabled()) {
-			logger.info("Using Kinesis stream for inbound: " + name);
+		if (this.logger.isInfoEnabled()) {
+			this.logger.info("Using Kinesis stream for inbound: " + name);
 		}
 
 		int shardCount = properties.getInstanceCount() * properties.getConcurrency();
@@ -84,95 +92,70 @@ public class KinesisStreamProvisioner
 		return new KinesisConsumerDestination(name, createOrUpdate(name, shardCount));
 	}
 
-	private Integer createOrUpdate(String name, Integer shards) {
+	private List<Shard> createOrUpdate(String stream, int shards) {
+		List<Shard> shardList = new ArrayList<>();
 
-		try {
-			DescribeStreamResult streamResult = amazonKinesis.describeStream(name);
+		int describeStreamRetries = 0;
 
-			if (logger.isInfoEnabled()) {
-				logger.info("Stream found, using existing stream");
+		String exclusiveStartShardId = null;
+
+		DescribeStreamRequest describeStreamRequest =
+				new DescribeStreamRequest()
+						.withStreamName(stream);
+
+		while (true) {
+			DescribeStreamResult describeStreamResult = null;
+
+			try {
+				describeStreamRequest.withExclusiveStartShardId(exclusiveStartShardId);
+				describeStreamResult = this.amazonKinesis.describeStream(describeStreamRequest);
+				StreamDescription streamDescription = describeStreamResult.getStreamDescription();
+				if (StreamStatus.ACTIVE.toString().equals(streamDescription.getStreamStatus())) {
+					shardList.addAll(streamDescription.getShards());
+
+					if (streamDescription.getHasMoreShards()) {
+						exclusiveStartShardId = shardList.get(shardList.size() - 1).getShardId();
+					}
+					else {
+						break;
+					}
+				}
+			}
+			catch (ResourceNotFoundException e) {
+				if (logger.isInfoEnabled()) {
+					logger.info("Stream '" + stream + " ' not found. Create one...");
+				}
+
+				this.amazonKinesis.createStream(stream, shards);
+				continue;
+			}
+			catch (LimitExceededException e) {
+				logger.info("Got LimitExceededException when describing stream [" + stream + "]. " +
+						"Backing off for [" + this.configurationProperties.getDescribeStreamBackoff() + "] millis.");
 			}
 
-			return streamResult.getStreamDescription().getShards().size();
-
-		}
-		catch (ResourceNotFoundException e) {
-			if (logger.isInfoEnabled()) {
-				logger.info("Stream not found");
+			if (describeStreamResult == null ||
+					!StreamStatus.ACTIVE.toString()
+							.equals(describeStreamResult.getStreamDescription().getStreamStatus())) {
+				if (describeStreamRetries++ > this.configurationProperties.getDescribeStreamRetries()) {
+					ResourceNotFoundException resourceNotFoundException =
+							new ResourceNotFoundException("The stream [" + stream +
+									"] isn't ACTIVE or doesn't exist.");
+					resourceNotFoundException.setServiceName("Kinesis");
+					throw new ProvisioningException("Kinesis provisioning error", resourceNotFoundException);
+				}
+				try {
+					Thread.sleep(this.configurationProperties.getDescribeStreamBackoff());
+				}
+				catch (InterruptedException e) {
+					Thread.interrupted();
+					throw new ProvisioningException("The [describeStream] thread for the stream ["
+							+ stream + "] has been interrupted.", e);
+				}
 			}
 		}
 
-		if (logger.isInfoEnabled()) {
-			logger.info("Attempting to create stream");
-		}
-
-		amazonKinesis.createStream(name, shards);
-
-		return shards;
-	}
-
-	private static final class KinesisProducerDestination implements ProducerDestination {
-
-		private final String streamName;
-
-		private final int shards;
-
-		KinesisProducerDestination(String streamName, Integer shards) {
-			this.streamName = streamName;
-			this.shards = shards;
-		}
-
-		@Override
-		public String getName() {
-			return this.streamName;
-		}
-
-		@Override
-		public String getNameForPartition(int shard) {
-			return this.streamName;
-		}
-
-		@Override
-		public String toString() {
-			return "KinesisProducerDestination{" +
-					"streamName='" + this.streamName + '\'' +
-					", shards=" + this.shards +
-					'}';
-		}
-
-	}
-
-	private static final class KinesisConsumerDestination implements ConsumerDestination {
-
-		private final String streamName;
-
-		private final int shards;
-
-		private final String dlqName;
-
-		KinesisConsumerDestination(String streamName, int shards) {
-			this(streamName, shards, null);
-		}
-
-		KinesisConsumerDestination(String streamName, Integer shards, String dlqName) {
-			this.streamName = streamName;
-			this.shards = shards;
-			this.dlqName = dlqName;
-		}
-
-		@Override
-		public String getName() {
-			return this.streamName;
-		}
-
-		@Override
-		public String toString() {
-			return "KinesisConsumerDestination{" +
-					"streamName='" + streamName + '\'' +
-					", shards=" + shards +
-					", dlqName='" + dlqName + '\'' +
-					'}';
-		}
+		return shardList;
 	}
 
 }

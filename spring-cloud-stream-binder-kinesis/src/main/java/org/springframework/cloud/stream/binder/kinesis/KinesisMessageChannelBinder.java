@@ -16,9 +16,17 @@
 
 package org.springframework.cloud.stream.binder.kinesis;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+
 import com.amazonaws.services.kinesis.AmazonKinesisAsync;
+import com.amazonaws.services.kinesis.model.Shard;
 
 import org.springframework.cloud.stream.binder.AbstractMessageChannelBinder;
+import org.springframework.cloud.stream.binder.BinderHeaders;
 import org.springframework.cloud.stream.binder.ExtendedConsumerProperties;
 import org.springframework.cloud.stream.binder.ExtendedProducerProperties;
 import org.springframework.cloud.stream.binder.ExtendedPropertiesBinder;
@@ -26,6 +34,7 @@ import org.springframework.cloud.stream.binder.kinesis.properties.KinesisBinderC
 import org.springframework.cloud.stream.binder.kinesis.properties.KinesisConsumerProperties;
 import org.springframework.cloud.stream.binder.kinesis.properties.KinesisExtendedBindingProperties;
 import org.springframework.cloud.stream.binder.kinesis.properties.KinesisProducerProperties;
+import org.springframework.cloud.stream.binder.kinesis.provisioning.KinesisConsumerDestination;
 import org.springframework.cloud.stream.binder.kinesis.provisioning.KinesisStreamProvisioner;
 import org.springframework.cloud.stream.provisioning.ConsumerDestination;
 import org.springframework.cloud.stream.provisioning.ProducerDestination;
@@ -38,6 +47,8 @@ import org.springframework.integration.core.MessageProducer;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.MessageHandler;
 import org.springframework.util.Assert;
+import org.springframework.util.ObjectUtils;
+import org.springframework.util.StringUtils;
 
 /**
  *
@@ -61,11 +72,24 @@ public class KinesisMessageChannelBinder extends
 	public KinesisMessageChannelBinder(AmazonKinesisAsync amazonKinesis,
 			KinesisBinderConfigurationProperties configurationProperties,
 			KinesisStreamProvisioner provisioningProvider) {
-		super(false, null, provisioningProvider);
+		super(false, headersToMap(configurationProperties), provisioningProvider);
 		Assert.notNull(amazonKinesis, "'amazonKinesis' must not be null");
-		Assert.notNull(configurationProperties, "'configurationProperties' must not be null");
 		this.configurationProperties = configurationProperties;
 		this.amazonKinesis = amazonKinesis;
+	}
+
+	private static String[] headersToMap(KinesisBinderConfigurationProperties configurationProperties) {
+		Assert.notNull(configurationProperties, "'configurationProperties' must not be null");
+		if (ObjectUtils.isEmpty(configurationProperties.getHeaders())) {
+			return BinderHeaders.STANDARD_HEADERS;
+		}
+		else {
+			String[] combinedHeadersToMap = Arrays.copyOfRange(BinderHeaders.STANDARD_HEADERS, 0,
+					BinderHeaders.STANDARD_HEADERS.length + configurationProperties.getHeaders().length);
+			System.arraycopy(configurationProperties.getHeaders(), 0, combinedHeadersToMap,
+					BinderHeaders.STANDARD_HEADERS.length, configurationProperties.getHeaders().length);
+			return combinedHeadersToMap;
+		}
 	}
 
 	@Override
@@ -88,8 +112,9 @@ public class KinesisMessageChannelBinder extends
 		KinesisMessageHandler kinesisMessageHandler = new KinesisMessageHandler(this.amazonKinesis);
 		kinesisMessageHandler.setSync(producerProperties.getExtension().isSync());
 		kinesisMessageHandler.setStream(destination.getName());
-		// tidy up partition key
-		kinesisMessageHandler.setPartitionKey("name");
+		if (producerProperties.isPartitioned()) {
+			kinesisMessageHandler.setPartitionKeyExpressionString("'partitionKey-' + headers." + BinderHeaders.PARTITION_HEADER);
+		}
 		kinesisMessageHandler.setBeanFactory(getBeanFactory());
 
 		return kinesisMessageHandler;
@@ -99,18 +124,43 @@ public class KinesisMessageChannelBinder extends
 	protected MessageProducer createConsumerEndpoint(ConsumerDestination destination, String group,
 			ExtendedConsumerProperties<KinesisConsumerProperties> properties) throws Exception {
 
-		KinesisMessageDrivenChannelAdapter adapter =
-				new KinesisMessageDrivenChannelAdapter(this.amazonKinesis, destination.getName());
+		Set<KinesisShardOffset> shardOffsets = null;
 
-		// explicitly setting the offset - LATEST is the default but added here
-		// so can be configured later
-		adapter.setStreamInitialSequence(KinesisShardOffset.latest());
+		if (properties.getInstanceCount() > 1) {
+			shardOffsets = new HashSet<>();
+			KinesisConsumerDestination kinesisConsumerDestination = (KinesisConsumerDestination) destination;
+			List<Shard> shards = kinesisConsumerDestination.getShards();
+			for (int i = 0; i < shards.size(); i++) {
+				// divide shards across instances
+				if ((i % properties.getInstanceCount()) == properties.getInstanceIndex()) {
+					shardOffsets.add(KinesisShardOffset.latest(destination.getName(), shards.get(i).getShardId()));
+				}
+			}
+		}
+
+		KinesisMessageDrivenChannelAdapter adapter;
+
+		if (shardOffsets == null) {
+			adapter = new KinesisMessageDrivenChannelAdapter(this.amazonKinesis, destination.getName());
+		}
+		else {
+			adapter = new KinesisMessageDrivenChannelAdapter(this.amazonKinesis,
+					shardOffsets.toArray(new KinesisShardOffset[shardOffsets.size()]));
+		}
+
+		boolean anonymous = !StringUtils.hasText(group);
+		String consumerGroup = anonymous ? "anonymous." + UUID.randomUUID().toString() : group;
+		adapter.setConsumerGroup(consumerGroup);
+
+		adapter.setStreamInitialSequence(anonymous ? KinesisShardOffset.latest() : KinesisShardOffset.trimHorizon());
 		// need to move these properties to the appropriate properties class
 		adapter.setCheckpointMode(CheckpointMode.record);
 		adapter.setListenerMode(ListenerMode.record);
+
+		adapter.setConcurrency(properties.getConcurrency());
 		adapter.setStartTimeout(properties.getExtension().getStartTimeout());
-		adapter.setDescribeStreamRetries(properties.getExtension().getDescribeStreamRetries());
-		adapter.setConcurrency(10);
+		adapter.setDescribeStreamBackoff(this.configurationProperties.getDescribeStreamBackoff());
+		adapter.setDescribeStreamRetries(this.configurationProperties.getDescribeStreamRetries());
 
 		// Deffer byte[] conversion to the ReceivingHandler
 		adapter.setConverter(null);
