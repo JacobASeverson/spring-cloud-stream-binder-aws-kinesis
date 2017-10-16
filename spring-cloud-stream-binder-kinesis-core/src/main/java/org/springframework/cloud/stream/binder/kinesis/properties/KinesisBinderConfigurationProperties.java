@@ -21,6 +21,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  *
  * @author Peter Oates
+ * @author Artem Bilan
  *
  */
 @ConfigurationProperties(prefix = "spring.cloud.stream.kinesis.binder")
@@ -31,6 +32,8 @@ public class KinesisBinderConfigurationProperties {
 	private int describeStreamBackoff = 1000;
 
 	private int describeStreamRetries = 50;
+
+	private Checkpoint checkpoint = new Checkpoint();
 
 	public String[] getHeaders() {
 		return this.headers;
@@ -55,4 +58,47 @@ public class KinesisBinderConfigurationProperties {
 	public void setDescribeStreamRetries(int describeStreamRetries) {
 		this.describeStreamRetries = describeStreamRetries;
 	}
+
+	public Checkpoint getCheckpoint() {
+		return this.checkpoint;
+	}
+
+	public void setCheckpoint(Checkpoint checkpoint) {
+		this.checkpoint = checkpoint;
+	}
+
+	public static class Checkpoint {
+
+		private String table = "checkpoint";
+
+		private long readCapacity = 1L;
+
+		private long writeCapacity = 1L;
+
+		public String getTable() {
+			return this.table;
+		}
+
+		public void setTable(String table) {
+			this.table = table;
+		}
+
+		public long getReadCapacity() {
+			return this.readCapacity;
+		}
+
+		public void setReadCapacity(long readCapacity) {
+			this.readCapacity = readCapacity;
+		}
+
+		public long getWriteCapacity() {
+			return this.writeCapacity;
+		}
+
+		public void setWriteCapacity(long writeCapacity) {
+			this.writeCapacity = writeCapacity;
+		}
+
+	}
+
 }
