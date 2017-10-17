@@ -22,6 +22,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *
  * @author Peter Oates
  * @author Artem Bilan
+ * @author Jacob Severson
  *
  */
 @ConfigurationProperties(prefix = "spring.cloud.stream.kinesis.binder")
@@ -32,6 +33,8 @@ public class KinesisBinderConfigurationProperties {
 	private int describeStreamBackoff = 1000;
 
 	private int describeStreamRetries = 50;
+
+	private boolean autoAddShards;
 
 	private Checkpoint checkpoint = new Checkpoint();
 
@@ -57,6 +60,14 @@ public class KinesisBinderConfigurationProperties {
 
 	public void setDescribeStreamRetries(int describeStreamRetries) {
 		this.describeStreamRetries = describeStreamRetries;
+	}
+
+	public boolean isAutoAddShards() {
+		return this.autoAddShards;
+	}
+
+	public void setAutoAddShards(boolean autoAddShards) {
+		this.autoAddShards = autoAddShards;
 	}
 
 	public Checkpoint getCheckpoint() {

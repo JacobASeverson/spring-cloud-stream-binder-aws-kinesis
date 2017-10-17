@@ -99,6 +99,32 @@ public class KinesisStreamProvisionerTests {
 		assertThat(destination.getName()).isEqualTo(name);
 	}
 
+	@Test // TODO
+	public void testProvisionConsumerUpdateShards() {
+		AmazonKinesis amazonKinesisMock = mock(AmazonKinesis.class);
+		KinesisBinderConfigurationProperties binderProperties = new KinesisBinderConfigurationProperties();
+		KinesisStreamProvisioner provisioner = new KinesisStreamProvisioner(amazonKinesisMock, binderProperties);
+
+		ExtendedConsumerProperties<KinesisConsumerProperties> extendedConsumerProperties =
+				new ExtendedConsumerProperties<>(new KinesisConsumerProperties());
+
+		String name = "test-stream";
+		String group = "test-group";
+
+		DescribeStreamResult describeStreamResult =
+				describeStreamResultWithShards(Collections.singletonList(new Shard()));
+
+		when(amazonKinesisMock.describeStream(any(DescribeStreamRequest.class)))
+				.thenReturn(describeStreamResult);
+
+		ConsumerDestination destination =
+				provisioner.provisionConsumerDestination(name, group, extendedConsumerProperties);
+
+		verify(amazonKinesisMock)
+				.describeStream(any(DescribeStreamRequest.class));
+		assertThat(destination.getName()).isEqualTo(name);
+	}
+
 	@Test
 	public void testProvisionProducerSuccessfulWithNewStream() {
 		AmazonKinesis amazonKinesisMock = mock(AmazonKinesis.class);
@@ -128,6 +154,32 @@ public class KinesisStreamProvisionerTests {
 		verify(amazonKinesisMock)
 				.createStream(name, shards);
 
+		assertThat(destination.getName()).isEqualTo(name);
+	}
+
+	@Test // TODO
+	public void testProvisionProducerUpdateShards() {
+		AmazonKinesis amazonKinesisMock = mock(AmazonKinesis.class);
+		KinesisBinderConfigurationProperties binderProperties = new KinesisBinderConfigurationProperties();
+		KinesisStreamProvisioner provisioner = new KinesisStreamProvisioner(amazonKinesisMock, binderProperties);
+
+		ExtendedConsumerProperties<KinesisConsumerProperties> extendedConsumerProperties =
+				new ExtendedConsumerProperties<>(new KinesisConsumerProperties());
+
+		String name = "test-stream";
+		String group = "test-group";
+
+		DescribeStreamResult describeStreamResult =
+				describeStreamResultWithShards(Collections.singletonList(new Shard()));
+
+		when(amazonKinesisMock.describeStream(any(DescribeStreamRequest.class)))
+				.thenReturn(describeStreamResult);
+
+		ConsumerDestination destination =
+				provisioner.provisionConsumerDestination(name, group, extendedConsumerProperties);
+
+		verify(amazonKinesisMock)
+				.describeStream(any(DescribeStreamRequest.class));
 		assertThat(destination.getName()).isEqualTo(name);
 	}
 
