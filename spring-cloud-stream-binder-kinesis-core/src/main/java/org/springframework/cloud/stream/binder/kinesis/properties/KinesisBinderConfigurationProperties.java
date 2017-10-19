@@ -34,7 +34,9 @@ public class KinesisBinderConfigurationProperties {
 
 	private int describeStreamRetries = 50;
 
-	private boolean autoAddShards;
+	private boolean autoAddShards = false;
+
+	private int minShardCount = 1;
 
 	private Checkpoint checkpoint = new Checkpoint();
 
@@ -68,6 +70,14 @@ public class KinesisBinderConfigurationProperties {
 
 	public void setAutoAddShards(boolean autoAddShards) {
 		this.autoAddShards = autoAddShards;
+	}
+
+	public int getMinShardCount() {
+		return minShardCount;
+	}
+
+	public void setMinShardCount(int minShardCount) {
+		this.minShardCount = minShardCount;
 	}
 
 	public Checkpoint getCheckpoint() {

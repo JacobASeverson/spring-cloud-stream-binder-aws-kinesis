@@ -128,7 +128,7 @@ public class KinesisStreamProvisioner
 					logger.info("Stream '" + stream + " ' not found. Create one...");
 				}
 
-				this.amazonKinesis.createStream(stream, shards);
+				this.amazonKinesis.createStream(stream, Math.max(this.configurationProperties.getMinShardCount(), shards));
 				continue;
 			}
 			catch (LimitExceededException e) {
@@ -157,8 +157,10 @@ public class KinesisStreamProvisioner
 			}
 		}
 
-		if ((shardList.size() < shards) && this.configurationProperties.isAutoAddShards()) {
-			return updateShardCount(stream, shardList.size(), shards);
+		int effectiveShardCount = Math.max(this.configurationProperties.getMinShardCount(), shards);
+
+		if ((shardList.size() < effectiveShardCount) && this.configurationProperties.isAutoAddShards()) {
+			return updateShardCount(stream, shardList.size(), effectiveShardCount);
 		}
 
 		return shardList;
