@@ -96,6 +96,10 @@ public class KinesisBinderConfigurationProperties {
 
 		private long writeCapacity = 1L;
 
+		private int createTableDelay = 1;
+
+		private int createTableRetries = 25;
+
 		public String getTable() {
 			return this.table;
 		}
@@ -120,6 +124,21 @@ public class KinesisBinderConfigurationProperties {
 			this.writeCapacity = writeCapacity;
 		}
 
+		public int getCreateTableDelay() {
+			return createTableDelay;
+		}
+
+		public void setCreateTableDelay(int createTableDelay) {
+			this.createTableDelay = createTableDelay;
+		}
+
+		public int getCreateTableRetries() {
+			return createTableRetries;
+		}
+
+		public void setCreateTableRetries(int createTableRetries) {
+			this.createTableRetries = createTableRetries;
+		}
 	}
 
 }
