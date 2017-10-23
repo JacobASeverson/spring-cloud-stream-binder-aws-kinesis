@@ -74,6 +74,7 @@ public class KinesisStreamProvisionerTests {
 
 		verify(amazonKinesisMock)
 				.describeStream(any(DescribeStreamRequest.class));
+		
 		assertThat(destination.getName()).isEqualTo(name);
 	}
 
@@ -100,13 +101,15 @@ public class KinesisStreamProvisionerTests {
 
 		verify(amazonKinesisMock)
 				.describeStream(any(DescribeStreamRequest.class));
+
 		assertThat(destination.getName()).isEqualTo(name);
 	}
 
 	@Test
 	public void testProvisionConsumerExistingStreamUpdateShards() {
 		AmazonKinesis amazonKinesisMock = mock(AmazonKinesis.class);
-		ArgumentCaptor<UpdateShardCountRequest> updateShardCaptor = ArgumentCaptor.forClass(UpdateShardCountRequest.class);
+		ArgumentCaptor<UpdateShardCountRequest> updateShardCaptor =
+				ArgumentCaptor.forClass(UpdateShardCountRequest.class);
 		String name = "test-stream";
 		String group = "test-group";
 		int targetShardCount = 2;
@@ -132,6 +135,7 @@ public class KinesisStreamProvisionerTests {
 
 		verify(amazonKinesisMock, times(1))
 				.updateShardCount(updateShardCaptor.capture());
+
 		assertThat(updateShardCaptor.getValue().getStreamName()).isEqualTo(name);
 		assertThat(updateShardCaptor.getValue().getScalingType()).isEqualTo(ScalingType.UNIFORM_SCALING.name());
 		assertThat(updateShardCaptor.getValue().getTargetShardCount()).isEqualTo(targetShardCount);
@@ -225,7 +229,7 @@ public class KinesisStreamProvisionerTests {
 
 		when(amazonKinesisMock.describeStream(any(DescribeStreamRequest.class)))
 				.thenThrow(new ResourceNotFoundException("I got nothing"))
-				.thenReturn(describeStreamResult);;
+				.thenReturn(describeStreamResult);
 
 		when(amazonKinesisMock.createStream(name, instanceCount * concurrency))
 				.thenReturn(new CreateStreamResult());
