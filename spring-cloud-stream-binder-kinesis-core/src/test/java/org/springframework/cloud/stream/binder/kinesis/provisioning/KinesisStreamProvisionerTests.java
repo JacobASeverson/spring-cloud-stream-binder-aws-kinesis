@@ -74,7 +74,7 @@ public class KinesisStreamProvisionerTests {
 
 		verify(amazonKinesisMock)
 				.describeStream(any(DescribeStreamRequest.class));
-		
+
 		assertThat(destination.getName()).isEqualTo(name);
 	}
 
